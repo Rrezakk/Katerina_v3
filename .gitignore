@@ -1,0 +1,42 @@
+# Ignore Visual Studio files
+*.obj
+*.pdb
+*.user
+*.suo
+*.cache
+*.vs
+*_i.c
+*_p.c
+*.ilk
+*.log
+*.dll
+*.exe
+*.csv
+*.bak
+*.ncb
+*.sbr
+*.scc
+**/uploads/**
+
+**/__pycache__/**
+**/recordings/**
+
+# Ignore build output folders
+**/bin/
+**/obj/
+
+# Ignore Node.js dependencies
+node_modules/
+
+# Ignore JetBrains Rider files
+.idea/
+
+# Ignore Resharper files
+_ReSharper*
+
+# Ignore Test Results
+TestResults/
+
+# Ignore .NET Core SDK files
+/global.json
+/.dotnet/
