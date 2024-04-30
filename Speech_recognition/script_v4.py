@@ -54,7 +54,7 @@ moving_average_window = 7
 cobra = pvcobra.create(access_key = access_key)
 porcupine = pvporcupine.create(
   access_key = access_key,
-  keyword_paths = [r'C:\Users\Admin\Desktop\Speech_recognition\hey-Alice_en_windows_v3_0_0.ppn']
+  keyword_paths = [r'hey-Alice_en_windows_v3_0_0.ppn']
 )
 recorder = PvRecorder(frame_length=frame_length)
 sample_rate = recorder.sample_rate
@@ -98,7 +98,7 @@ def process_threshold(audio_float,audio_int, trigger_values,wake_word_is_active)
     if current_frame >= frames_under_continue_threshold_to_stop and len(trigger_values) >= frames_under_continue_threshold_to_stop and np.mean(trigger_values[-frames_under_continue_threshold_to_stop:]) < speech_continue_threshold and record_started:
         record_started = False
         time_end = datetime.now()
-        file_name = rf"C:\Users\Admin\Desktop\Speech_recognition\recordings\file_{time_end.strftime('%M.%S.%f')[:-3]}.wav"
+        file_name = rf"recordings\file_{time_end.strftime('%M.%S.%f')[:-3]}.wav"
         print(f'Record ended!: {time_end.strftime("%M:%S.%f")[:-3]} -> {file_name}')
 
         with wave.open(file_name, 'wb') as wavfile:
@@ -108,8 +108,8 @@ def process_threshold(audio_float,audio_int, trigger_values,wake_word_is_active)
             audio_data = np.concatenate(main_buffer).astype(np.int16)
             wavfile.writeframes(audio_data.tobytes())
 
-        #recognized_text = recognition_client.recognize_audio_samples(file_name)
-        #print(f'recognized: {recognized_text}')
+        recognized_text = recognition_client.recognize_audio_samples(file_name)
+        print(f'recognized: {recognized_text}')
         main_buffer.clear()
         current_frame = 0
 
