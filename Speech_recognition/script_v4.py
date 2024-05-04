@@ -15,6 +15,28 @@ from playsound import playsound
 import os
 from pygame import mixer
 import pygame
+import socket
+import asyncio
+import websockets
+processing_audio = True  # Flag to control whether to process audio frames
+continue_execution = asyncio.Event()
+
+
+async def receive_messages(websocket, path):
+    global continue_execution
+    async for message in websocket:
+        print("Message received from client:", message)
+        # Check if the received message indicates task completion
+        if message == "ok":
+            print("C# application completed its task.")
+            # Set the flag to continue execution
+            continue_execution.set()
+start_server = websockets.serve(receive_messages, "localhost", 8765)
+asyncio.get_event_loop().run_until_complete(start_server)
+def send_message(message):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.connect(('127.0.0.1', 12345))
+        s.sendall(message.encode())
 activation_sound_path = 'activation.mp3'
 
 mixer.init()
@@ -32,7 +54,7 @@ initial_threshold = 2000
 dema_alpha = 0.6
 
 frames_under_continue_threshold_to_stop = 60#so also keep in mind that starting from start frame!
-speech_activation_threshold = 46
+speech_activation_threshold = 40
 speech_continue_threshold = 6
 wake_word_duration = 5#seconds
 samples_before_activation = 9
@@ -73,7 +95,7 @@ pre_buffer = []
 main_buffer = []
 current_frame = 0
 def process_threshold(audio_float,audio_int, trigger_values,wake_word_is_active):
-    global record_started, time_start, time_end, pre_buffer, main_buffer, current_frame, sample_rate,speech_activation_threshold
+    global record_started, time_start, time_end, pre_buffer, main_buffer, current_frame, sample_rate,speech_activation_threshold,processing_audio
     global frames_under_continue_threshold_to_stop,recognize_options,recognition_client
     
     if not record_started and trigger_values[-1] > speech_activation_threshold and wake_word_is_active:
@@ -110,6 +132,12 @@ def process_threshold(audio_float,audio_int, trigger_values,wake_word_is_active)
 
         recognized_text = recognition_client.recognize_audio_samples(file_name)
         print(f'recognized: {recognized_text}')
+        send_message(recognized_text)
+        processing_audio = False
+        #asyncio.get_event_loop().run_until_complete(continue_execution.wait())
+        #print("Received completion message from C#. Continuing with Python code.")
+
+
         main_buffer.clear()
         current_frame = 0
 
@@ -141,13 +169,22 @@ def callback(audio):
     spectral_centroid = librosa.feature.spectral_centroid(S=np.abs(stft_frame))[0]
     mean_spectral_centroid = np.mean(spectral_centroid)
     rms_value = np.sqrt(np.mean(audio_float**2))
-    decibels = 20 * np.log10(rms_value / 0.0002)
+
+    if rms_value != 0:
+        decibels = 20 * np.log10(rms_value / 0.0002)
+    else:
+        decibels = 20 * np.log10(0.0006 / 0.0002)
+
+    
     dynamic_threshold = dema_alpha * mean_spectral_centroid + (1 - dema_alpha) * (dema_alpha * mean_spectral_centroid + (1 - dema_alpha) * initial_threshold)
     dynamic_threshold = dynamic_threshold * 0.9
     keyword_detection = porcupine.process(audio)
     voice_probability = cobra.process(audio)*100
     diff_centroid_value = np.clip(dynamic_threshold - mean_spectral_centroid, 0, None)/10
-    trigger_value = np.clip((rms_value*0.2+voice_probability*0.8+diff_centroid_value*0.6+decibels*0.4)/2-decibels,0,None)*5
+    #trigger_value = np.clip((rms_value*0.2+voice_probability*0.8+diff_centroid_value*0.6+decibels*0.4)/2-decibels,0,None)*5
+
+    trigger_value = np.clip((rms_value * 0.2 + voice_probability * 0.8 +  diff_centroid_value * 0.6 + decibels * 0.4) / 2 , 0, None) * 1.2 - decibels/4 # - decibels  diff_centroid_value *
+
 
     pre_buffer.append(audio)
     trigger_values.append(trigger_value)
@@ -170,10 +207,10 @@ def callback(audio):
         voice_probability_values = voice_probability_values[-max_frames:]
         keyword_detection_values = keyword_detection_values[-max_frames:]
 
-    #line_rms.set_data(range(len(rms_values)), np.array(rms_values))
-    #line_centroid.set_data(range(len(centroid_values)), centroid_values)
+    line_rms.set_data(range(len(rms_values)), np.array(rms_values))
+    line_centroid.set_data(range(len(centroid_values)), centroid_values)
     #line_threshold.set_data(range(len(threshold_values)), threshold_values)
-    #line_diff_centroid.set_data(range(len(centroid_diff_values)), np.clip(np.array(centroid_diff_values),0,100))
+    line_diff_centroid.set_data(range(len(centroid_diff_values)), np.clip(np.array(centroid_diff_values),0,100))
 
     moving_average = weighted_moving_average(trigger_values)
 
@@ -195,10 +232,10 @@ def callback(audio):
     process_threshold(audio_float, audio, moving_average, wake_word_is_active)
 
 fig, ax = plt.subplots()
-#line_rms, = ax.plot([], label='RMS', color='r')
-#line_centroid, = ax.plot([], label='Centroid')
+line_rms, = ax.plot([], label='RMS', color='r')
+line_centroid, = ax.plot([], label='Centroid')
 #line_threshold, = ax.plot([], label='Threshold')
-#line_diff_centroid, = ax.plot([], label='Centroid diff',color='y', linestyle='-')
+line_diff_centroid, = ax.plot([], label='Centroid diff',color='y', linestyle='-')
 line_decibels, = ax.plot([], label='Decibels', color='b')
 line_voice_probability, = ax.plot([], label='Voice', color='g')
 #line_mean, = ax.plot([], label='Mean', color='0')
@@ -220,8 +257,19 @@ running = True
 try:
     recorder.start()
     while running:
-        audio = recorder.read()
-        callback(audio)
+        some = recorder.read()
+        if processing_audio:
+            audio = some
+            callback(audio)
+        else:
+            print("Audio processing paused. Waiting for 'ok' message from C#.")
+
+            # Wait until 'ok' message is received from C#
+            asyncio.get_event_loop().run_until_complete(continue_execution.wait())
+
+            # Reset the flag to resume audio processing
+            processing_audio = True
+            print("Received 'ok' message from C#. Resuming audio processing.")
         
 except KeyboardInterrupt:
     running = False  # Set the flag to stop the loop
